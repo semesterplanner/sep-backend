@@ -1,0 +1,22 @@
+os: linux
+language: python
+jobs:
+  include:
+    - stage: "Test"
+      name: "Test Django Backend"
+      language: python
+      python: "3.7"
+      dist: xenial
+      cache:
+        directories:
+        - $HOME/.cache/pip
+      env:
+        - SECRET_KEY="sep-travis-secret-key" DB_USER="postgres" DB_NAME="sep"
+      services:
+        - postgresql
+      install:
+        - pip install -r requirements.txt
+      before_script:
+        - psql -c 'create database sep;' -U postgres
+      script:
+        - python manage.py test
