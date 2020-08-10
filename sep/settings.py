@@ -17,6 +17,10 @@ load_dotenv()
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+BACKEND_DIR = BASE_DIR  # rename variable for clarity
+FRONTEND_DIR = os.path.abspath(
+    os.path.join(BACKEND_DIR, '..', 'frontend'))
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/3.0/howto/deployment/checklist/
@@ -25,9 +29,8 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SECRET_KEY = os.getenv("SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-ALLOWED_HOSTS = []
+DEBUG = os.environ.get('DJANGO_ENV') == 'development'
+ALLOWED_HOSTS = []  # ['localhost']
 
 
 # Application definition
@@ -35,18 +38,19 @@ ALLOWED_HOSTS = []
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
+    'mozilla_django_oidc',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
     'corsheaders',
+    'users',
     'semesterplaner',
 ]
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
-    'django.middleware.common.CommonMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -54,6 +58,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'sep.middleware.CustomSessionRefresh',
 ]
 
 ROOT_URLCONF = 'sep.urls'
@@ -79,15 +84,56 @@ WSGI_APPLICATION = 'sep.wsgi.application'
 
 # Rest framework
 REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'mozilla_django_oidc.contrib.drf.OIDCAuthentication',
+        # 'rest_framework.authentication.SessionAuthentication',
+    ],
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.AllowAny',
+        'rest_framework.permissions.IsAuthenticated',
     ]
 }
 
-# Cors settings
-CORS_ORIGIN_WHITELIST = [
-    'http://localhost:3000'
-]
+# CORS settings
+CORS_ALLOW_CREDENTIALS = True
+CORS_ORIGIN_WHITELIST = ['http://127.0.0.1:3000', 'http://localhost:3000']
+
+# CSRF settings
+# we are a (mostly) stateless api so don't use sessions
+CSRF_USE_SESSIONS = False
+CSRF_COOKIE_HTTPONLY = False
+
+################# Authentication
+# OpenID Login
+OIDC_RENEW_ID_TOKEN_EXPIRY_SECONDS = 60 * 60 * 24 * 7  # one week
+OIDC_RP_SIGN_ALGO = 'RS256'
+OIDC_USERNAME_ALGO = ''
+OIDC_RP_SCOPES = 'openid email profile'
+
+OIDC_RP_CLIENT_ID = os.getenv('OIDC_RP_CLIENT_ID')
+OIDC_RP_CLIENT_SECRET = os.getenv('OIDC_RP_CLIENT_SECRET')
+
+OIDC_OP_AUTHORIZATION_ENDPOINT = os.getenv("OIDC_OP_AUTHORIZATION_ENDPOINT")
+OIDC_OP_TOKEN_ENDPOINT = os.getenv("OIDC_OP_TOKEN_ENDPOINT")
+OIDC_OP_USER_ENDPOINT = os.getenv("OIDC_OP_USER_ENDPOINT")
+OIDC_OP_JWKS_ENDPOINT = os.getenv("OIDC_OP_JWKS_ENDPOINT")
+OIDC_OP_REVOCATION_ENDPOINT = os.getenv("OIDC_OP_REVOCATION_ENDPOINT")
+
+OIDC_CALLBACK_CLASS = 'sep.views.CustomOIDCAuthCallbackView'
+OIDC_AUTHENTICATE_CLASS = 'sep.views.CustomOIDCAuthRequestView'
+
+OIDC_STORE_ACCESS_TOKEN = True
+OIDC_REDIRECT_URI = 'http://127.0.0.1:3000/login'
+
+# Add 'mozilla_django_oidc' authentication backend
+AUTHENTICATION_BACKENDS = (
+    'django.contrib.auth.backends.ModelBackend',
+    'sep.auth.CustomOIDCAuthenticationBackend',
+)
+
+AUTH_USER_MODEL = 'users.UserProfile'
+# We only use sessions when acquiring an access token to store the random state so having
+# non-http-only cookies should be fine
+SESSION_COOKIE_HTTPONLY = False
 
 # Database
 # https://docs.djangoproject.com/en/3.0/ref/settings/#databases
@@ -141,3 +187,23 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/3.0/howto/static-files/
 
 STATIC_URL = '/static/'
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'mozilla_django_oidc': {
+            'handlers': ['console'],
+            'level': 'DEBUG'
+        }
+    }
+}
